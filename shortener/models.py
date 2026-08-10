@@ -8,6 +8,14 @@ class ShortURL(models.Model):
         unique=True
     )
 
+    owner = models.ForeignKey(
+    settings.AUTH_USER_MODEL,
+    null=True,
+    blank=True,
+    on_delete=models.SET_NULL,
+    related_name="short_urls",
+    )
+
     original_url = models.URLField()
 
     created_at = models.DateTimeField(
@@ -24,10 +32,4 @@ class ShortURL(models.Model):
     )
 
 class User(AbstractUser):
-    owner = models.ForeignKey(
-    settings.AUTH_USER_MODEL,
-    null=True,
-    blank=True,
-    on_delete=models.SET_NULL,
-    related_name="short_urls",
-    )
+    pass
