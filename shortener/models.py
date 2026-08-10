@@ -1,4 +1,6 @@
 from django.db import models
+from django.contrib.auth.models import AbstractUser
+from django.conf import settings
 
 class ShortURL(models.Model):
     short_code = models.CharField(
@@ -20,4 +22,12 @@ class ShortURL(models.Model):
     is_active = models.BooleanField(
         default=True
     )
-    
+
+class User(AbstractUser):
+    owner = models.ForeignKey(
+    settings.AUTH_USER_MODEL,
+    null=True,
+    blank=True,
+    on_delete=models.SET_NULL,
+    related_name="short_urls",
+    )
