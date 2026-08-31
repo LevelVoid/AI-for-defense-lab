@@ -1,5 +1,6 @@
 """WebSocket hub + co-evolution simulation endpoint."""
 import asyncio
+import json
 import random
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -46,13 +47,13 @@ async def ws_stream(websocket: WebSocket, client_id: str):
 
             elif action == "run_epoch":
                 epoch = data.get("epoch", 1)
-                await _simulate_epoch(client_id, epoch)
+                await _simulate_epoch(websocket, epoch)
 
     except WebSocketDisconnect:
         manager.disconnect(client_id)
 
 
-async def _simulate_epoch(client_id: str, epoch: int):
+async def _simulate_epoch(websocket: WebSocket, epoch: int):
     """Simulate one co-evolution epoch: generate → evade → retrain → improve."""
     evasion_rate = max(0.0, 0.45 - (epoch - 1) * 0.07 + random.uniform(-0.03, 0.03))
     detection_rate = min(1.0, 0.55 + (epoch - 1) * 0.07 + random.uniform(-0.02, 0.02))
@@ -61,11 +62,11 @@ async def _simulate_epoch(client_id: str, epoch: int):
 
     for step in ["generating", "evading", "detecting", "retraining"]:
         await asyncio.sleep(0.4)
-        await manager.send(client_id, CoEvolutionEvent(
+        await websocket.send_text(json.dumps(CoEvolutionEvent(
             event_type=step,
             epoch=epoch,
             data={"evasion_rate": round(evasion_rate, 4)},
-        ).model_dump())
+        ).model_dump()))
 
     result = EpochResult(
         epoch=epoch,
@@ -75,7 +76,4 @@ async def _simulate_epoch(client_id: str, epoch: int):
         auc=round(auc, 4),
         new_samples=random.randint(120, 400),
     )
-    await manager.send(client_id, {
-        "event": "epoch_complete",
-        **result.model_dump(),
-    })
+    await websocket.send_text(json.dumps({"event": "epoch_complete", **result.model_dump()}))
