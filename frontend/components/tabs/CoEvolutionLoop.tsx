@@ -27,19 +27,21 @@ interface ChartPoint {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const EPOCH_EVENTS: Record<number, string> = {
-  1: 'Baseline — initial model deployment',
-  2: 'Red-team adapts; evasion spike detected',
-  3: 'Blue-team retrain triggered on new samples',
-  4: 'Evasion rate collapses post-retrain',
-  5: 'System hardened — new equilibrium',
+function epochLabel(epoch: number): string {
+  if (epoch === 1) return 'Baseline — initial model deployment'
+  if (epoch === 2) return 'Red-team adapts; evasion spike detected'
+  if (epoch === 3) return 'Blue-team retrain triggered on new samples'
+  if (epoch === 4) return 'Evasion rate collapses post-retrain'
+  if (epoch === 5) return 'System hardened — new equilibrium'
+  if (epoch <= 8)  return `Continued hardening — evasion converging`
+  return `Deep equilibrium — system stabilized`
 }
 
 const STEP_LABELS: Record<string, string> = {
-  generating: 'Red-team generating adversarial payloads...',
-  evading:    'Evasion test: probing classifier boundary...',
-  detecting:  'Blue-team classifying batch...',
-  retraining: 'Blue-team retrain triggered — absorbing new samples...',
+  generating: 'Red-team synthesizing payloads — 16 vectors × 3 samples (48 total)',
+  evading:    'Evasion test: probing classifier decision boundary',
+  detecting:  'Blue-team classifying 48-sample batch',
+  retraining: 'Blue-team retrain triggered — absorbing evaded samples',
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -143,15 +145,21 @@ function MiniChart({
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function CoEvolutionLoop() {
-  const [epochs,    setEpochs]    = useState<EpochRow[]>([])
-  const [lines,     setLines]     = useState<TerminalLine[]>(INIT_LINES)
-  const [isRunning, setIsRunning] = useState(false)
-  const [phase,     setPhase]     = useState<string | null>(null)
+  const [epochs,      setEpochs]      = useState<EpochRow[]>([])
+  const [lines,       setLines]       = useState<TerminalLine[]>(INIT_LINES)
+  const [isRunning,   setIsRunning]   = useState(false)
+  const [phase,       setPhase]       = useState<string | null>(null)
+  const [epochCount,  setEpochCount]  = useState(5)
+  const [customInput, setCustomInput] = useState('')
 
   const wsRef          = useRef<WebSocket | null>(null)
   const epochQueueRef  = useRef<number[]>([])
   const onMsgRef       = useRef<(data: string) => void>(() => {})
   const clientId       = useRef(`coevo-${Math.random().toString(36).slice(2, 9)}`)
+  const isRunningRef   = useRef(false)
+
+  // Keep isRunningRef in sync so stable WS callbacks can read it
+  useEffect(() => { isRunningRef.current = isRunning }, [isRunning])
 
   const append = useCallback((line: TerminalLine) => {
     setLines(prev => [...prev, line])
@@ -172,6 +180,19 @@ export default function CoEvolutionLoop() {
       const msg = JSON.parse(raw) as Record<string, unknown>
 
       const eventType = msg.event_type as string | undefined
+
+      // Per-vector detection result streamed during the detecting step
+      if (eventType === 'vector_result') {
+        const d = msg.data as { vector_id: string; model: string; conf: number; detected: boolean; samples: number }
+        const confPct = (d.conf * 100).toFixed(0)
+        const sampleTag = d.samples ? ` (${d.samples}×)` : ''
+        append(mkLine(
+          d.detected ? 'info' : 'error',
+          `  ${d.detected ? '✓' : '✗'} ${d.vector_id.toUpperCase()} · ${d.model} · conf=${confPct}%${sampleTag} · ${d.detected ? 'DETECTED' : 'EVADED'}`,
+        ))
+        return
+      }
+
       if (eventType && STEP_LABELS[eventType]) {
         setPhase(`${eventType} (epoch ${msg.epoch})`)
         const evasionPct =
@@ -182,6 +203,14 @@ export default function CoEvolutionLoop() {
           eventType === 'retraining' ? 'warn' : 'info',
           `E${msg.epoch} · ${STEP_LABELS[eventType]}${evasionPct}`,
         ))
+        return
+      }
+
+      if (msg.event === 'epoch_error') {
+        append(mkLine('error', `E${msg.epoch} — backend error: ${msg.error}`))
+        epochQueueRef.current = []
+        setIsRunning(false)
+        setPhase(null)
         return
       }
 
@@ -207,7 +236,7 @@ export default function CoEvolutionLoop() {
         } else {
           setIsRunning(false)
           setPhase(null)
-          append(mkLine('success', 'Co-evolution loop complete — system hardened.'))
+          append(mkLine('success', `Co-evolution loop complete — ${row.epoch} epochs run · system hardened.`))
         }
       }
     }
@@ -216,8 +245,20 @@ export default function CoEvolutionLoop() {
   useEffect(() => {
     const ws = new WebSocket(`ws://localhost:8000/ws/stream/${clientId.current}`)
     ws.onmessage = (e) => onMsgRef.current(e.data)
-    ws.onerror   = () => {}
-    ws.onclose   = () => {}
+    ws.onerror = () => {
+      if (!isRunningRef.current) return
+      epochQueueRef.current = []
+      setIsRunning(false)
+      setPhase(null)
+      setLines(prev => [...prev, mkLine('error', 'WebSocket error — run aborted.')])
+    }
+    ws.onclose = () => {
+      if (!isRunningRef.current) return
+      epochQueueRef.current = []
+      setIsRunning(false)
+      setPhase(null)
+      setLines(prev => [...prev, mkLine('error', 'WebSocket closed — run aborted.')])
+    }
     wsRef.current = ws
     return () => ws.close()
   }, [])
@@ -227,8 +268,18 @@ export default function CoEvolutionLoop() {
     setEpochs([])
     setLines(INIT_LINES)
     setIsRunning(true)
-    epochQueueRef.current = [1, 2, 3, 4, 5]
+    epochQueueRef.current = Array.from({ length: epochCount }, (_, i) => i + 1)
     sendNextEpoch()
+  }
+
+  function handlePreset(n: number) {
+    if (!isRunning) { setEpochCount(n); setCustomInput('') }
+  }
+
+  function handleCustomBlur() {
+    const n = parseInt(customInput, 10)
+    if (!isRunning && n >= 1 && n <= 50) setEpochCount(n)
+    else setCustomInput('')
   }
 
   // ── Chart data (two separate single-series charts — no dual axis) ───────────
@@ -248,7 +299,7 @@ export default function CoEvolutionLoop() {
             Co-Evolution Loop
           </h2>
           <p className="text-slate-500 text-xs mt-1">
-            Adversarial AI red/blue co-evolution — 5-epoch simulation
+            Adversarial AI red/blue co-evolution — 16 vectors · real pipeline
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -262,7 +313,7 @@ export default function CoEvolutionLoop() {
               ? 'text-amber-400 border-amber-500/30 bg-amber-500/5'
               : 'text-matrix border-matrix/30 bg-matrix/5'
           }`}>
-            {isRunning ? 'RUNNING' : `${epochs.length}/5 EPOCHS`}
+            {isRunning ? 'RUNNING' : `${epochs.length}/${epochCount} EPOCHS`}
           </span>
         </div>
       </div>
@@ -342,7 +393,7 @@ export default function CoEvolutionLoop() {
                         </td>
                         <td className="py-2 pr-4 font-mono text-slate-400">+{ep.newSamples}</td>
                         <td className="py-2 text-slate-500 text-[10px]">
-                          {EPOCH_EVENTS[ep.epoch] ?? '—'}
+                          {epochLabel(ep.epoch)}
                         </td>
                       </tr>
                     )
@@ -350,6 +401,43 @@ export default function CoEvolutionLoop() {
                 )}
               </tbody>
             </table>
+          </div>
+
+          {/* Epoch count selector */}
+          <div className="shrink-0 flex items-center gap-2">
+            <span className="text-[10px] text-slate-600 tracking-widest uppercase">Epochs</span>
+            {[5, 10, 20].map(n => (
+              <button
+                key={n}
+                onClick={() => handlePreset(n)}
+                disabled={isRunning}
+                className={`px-2 py-0.5 text-xs font-mono rounded-sm border transition-colors
+                  disabled:cursor-not-allowed
+                  ${epochCount === n && !customInput
+                    ? 'border-matrix text-matrix bg-matrix/10'
+                    : 'border-border text-slate-500 hover:border-slate-500 hover:text-slate-300'
+                  }`}
+              >
+                {n}
+              </button>
+            ))}
+            <input
+              type="number"
+              min={1}
+              max={50}
+              placeholder="N"
+              value={customInput}
+              disabled={isRunning}
+              onChange={e => { setCustomInput(e.target.value) }}
+              onBlur={handleCustomBlur}
+              onKeyDown={e => { if (e.key === 'Enter') handleCustomBlur() }}
+              className={`w-12 px-2 py-0.5 text-xs font-mono rounded-sm border bg-transparent text-center outline-none
+                disabled:cursor-not-allowed
+                ${customInput
+                  ? 'border-matrix text-matrix'
+                  : 'border-border text-slate-500 focus:border-slate-500'
+                }`}
+            />
           </div>
 
           {/* Run button */}
@@ -362,7 +450,7 @@ export default function CoEvolutionLoop() {
                 enabled:border-matrix/50 enabled:text-matrix enabled:bg-matrix/5
                 enabled:hover:bg-matrix/15 enabled:hover:border-matrix"
             >
-              {isRunning ? '⠸ Simulating...' : '▶  Run Co-Evolution Loop (5 Epochs)'}
+              {isRunning ? '⠸ Running...' : `▶  Run Co-Evolution Loop (${epochCount} Epochs)`}
             </button>
           </div>
         </div>

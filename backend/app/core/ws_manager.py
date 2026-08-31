@@ -12,8 +12,11 @@ class ConnectionManager:
         await websocket.accept()
         self._connections[client_id] = websocket
 
-    def disconnect(self, client_id: str):
-        self._connections.pop(client_id, None)
+    def disconnect(self, client_id: str, websocket: "WebSocket | None" = None):
+        # Guard against StrictMode double-mount race: only remove the entry
+        # if the disconnecting socket is still the one currently registered.
+        if websocket is None or self._connections.get(client_id) is websocket:
+            self._connections.pop(client_id, None)
 
     async def send(self, client_id: str, data: dict[str, Any]):
         ws = self._connections.get(client_id)

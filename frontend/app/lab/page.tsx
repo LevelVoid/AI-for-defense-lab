@@ -6,6 +6,7 @@ import ThreatMatrix from '@/components/tabs/ThreatMatrix'
 import GeneratorStudio from '@/components/tabs/GeneratorStudio'
 import DefenderDashboard from '@/components/tabs/DefenderDashboard'
 import CoEvolutionLoop from '@/components/tabs/CoEvolutionLoop'
+import WelcomeModal from '@/components/WelcomeModal'
 import type { ComponentType } from 'react'
 
 const PANELS: Record<TabId, ComponentType> = {
@@ -21,6 +22,7 @@ export default function LabPage() {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
+      <WelcomeModal />
       {/* Header */}
       <header className="flex items-center gap-3 px-6 py-3 border-b border-border bg-[#080d12] shrink-0">
         <span className="text-matrix font-semibold text-sm tracking-widest uppercase">
