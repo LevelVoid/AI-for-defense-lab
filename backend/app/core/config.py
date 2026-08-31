@@ -2,9 +2,10 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    PROJECT_NAME: str = "AI for Defense"
+    PROJECT_NAME: str = "Mastercard AI Defense Lab"
     VERSION: str = "0.1.0"
-    ALLOWED_ORIGINS: list[str] = ["http://localhost:5173"]
+    ALLOWED_ORIGINS: list[str] = ["http://localhost:3000"]
+    WS_ORIGINS: list[str] = ["http://localhost:3000"]
 
     class Config:
         env_file = ".env"

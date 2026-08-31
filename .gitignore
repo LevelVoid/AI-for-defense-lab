@@ -8,8 +8,9 @@ dist/
 
 # Frontend
 frontend/node_modules/
-frontend/dist/
+frontend/.next/
+frontend/out/
 frontend/.env.local
-
+CLAUDE.md
 # Misc
 .DS_Store
