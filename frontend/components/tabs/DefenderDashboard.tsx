@@ -138,7 +138,8 @@ export default function DefenderDashboard() {
     append(mkLine('cmd', 'analyze_batch — all 16 attack vectors'))
 
     try {
-      const res = await fetch('/api/defender/analyze_batch', { method: 'POST' })
+      const API = process.env.NEXT_PUBLIC_API_URL!;
+      const res = await fetch(`${API}/api/defender/analyze_batch`, {method: "POST",});
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data: BatchStats = await res.json()
 
