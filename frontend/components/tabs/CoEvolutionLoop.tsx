@@ -243,7 +243,8 @@ export default function CoEvolutionLoop() {
   })
 
   useEffect(() => {
-    const ws = new WebSocket(`ws://localhost:8000/ws/stream/${clientId.current}`)
+    const API_URL = process.env.NEXT_PUBLIC_API_URL!;
+    const ws = new WebSocket(`${API_URL.replace(/^http/, "ws")}/ws/stream/${clientId}`);
     ws.onmessage = (e) => onMsgRef.current(e.data)
     ws.onerror = () => {
       if (!isRunningRef.current) return

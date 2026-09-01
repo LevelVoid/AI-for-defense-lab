@@ -64,7 +64,8 @@ function payloadLanguage(fmt: string): string {
 function pad(n: number, len = 3): string { return String(n).padStart(len, '0') }
 
 const CLIENT_ID = `studio-${Math.random().toString(36).slice(2, 9)}`
-const WS_URL    = `ws://localhost:8000/ws/stream/${CLIENT_ID}`
+const API_URL = process.env.NEXT_PUBLIC_API_URL!;
+const WS_URL = `${API_URL.replace(/^http/, "ws")}/ws/stream/${CLIENT_ID}`;
 
 const PLACEHOLDER = `// Select an attack vector and choose an attack mode:
 //
